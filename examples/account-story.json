@@ -1,0 +1,23 @@
+{
+  "id": "DEMO-101",
+  "title": "Create an Account",
+  "description": "Local training fixture requirements, not a Salesforce org or standard Salesforce validation rules.",
+  "acceptanceCriteria": [
+    {
+      "id": "AC1",
+      "text": "Saving a non-empty Account Name creates a row containing that name."
+    },
+    {
+      "id": "AC2",
+      "text": "Saving a blank Account Name shows Account Name is required and keeps the form open."
+    },
+    {
+      "id": "AC3",
+      "text": "Cancel closes the form without creating an account."
+    },
+    {
+      "id": "AC4",
+      "text": "The selected Industry is displayed alongside the created name."
+    }
+  ]
+}
