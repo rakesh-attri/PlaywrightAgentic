@@ -1,0 +1,120 @@
+name: Salesforce agentic QA
+
+on:
+  push:
+    branches: [main, 'codex/**']
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Demo checks or an already reviewed live Salesforce bundle
+        type: choice
+        options: [demo, live]
+        default: demo
+      bundle:
+        description: 'For live: committed path such as reviewed/SF-101-...'
+        type: string
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qa-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  demo:
+    if: github.event_name != 'workflow_dispatch' || inputs.mode == 'demo'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CI: 'true'
+      DEEPEVAL_TELEMETRY_OPT_OUT: 'YES'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run demo
+      - run: npm run check:reports
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: demo-evidence
+          path: artifacts/
+          retention-days: 7
+          if-no-files-found: ignore
+
+  chroma:
+    if: github.event_name != 'workflow_dispatch' || inputs.mode == 'demo'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CI: 'true'
+      DEEPEVAL_TELEMETRY_OPT_OUT: 'YES'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run check:chroma
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: chroma-demo-evidence
+          path: artifacts/
+          retention-days: 7
+          if-no-files-found: ignore
+
+  live:
+    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'live'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: salesforce-qa
+    env:
+      CI: 'true'
+      DEEPEVAL_TELEMETRY_OPT_OUT: 'YES'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run typecheck
+      - name: Execute reviewed suite with automatic JWT storageState
+        env:
+          REVIEWED_BUNDLE: ${{ inputs.bundle }}
+          SF_JWT_PRIVATE_KEY: ${{ secrets.SF_JWT_PRIVATE_KEY }}
+          SF_CLIENT_ID: ${{ secrets.SF_CLIENT_ID }}
+          SF_USERNAME: ${{ secrets.SF_USERNAME }}
+          SF_LOGIN_URL: ${{ vars.SF_LOGIN_URL }}
+          SF_JWT_AUDIENCE: ${{ vars.SF_JWT_AUDIENCE }}
+          SF_BASE_URL: ${{ vars.SF_BASE_URL }}
+          SF_START_PATH: ${{ vars.SF_START_PATH }}
+          SF_ALLOWED_ORIGINS: ${{ vars.SF_ALLOWED_ORIGINS }}
+          SF_AUTH_MARKER_BY: ${{ vars.SF_AUTH_MARKER_BY }}
+          SF_AUTH_MARKER_ROLE: ${{ vars.SF_AUTH_MARKER_ROLE }}
+          SF_AUTH_MARKER_NAME: ${{ vars.SF_AUTH_MARKER_NAME }}
+        run: npm run sfqa -- run-reviewed "$REVIEWED_BUNDLE"
+      # Live reports are produced locally but not uploaded automatically:
+      # traces/HTML can contain authenticated sandbox/session data.
+      - name: Remove local session state
+        if: always()
+        run: node -e "require('node:fs').rmSync('.auth',{recursive:true,force:true})"
